@@ -1,4 +1,9 @@
 ﻿{
     "Link": "https:\/\/developer.android.com\/studio#command-tools",
+    "PlatOld": [],
+    "PlatOldRecent": "28.0.2",
     "RootFolder": "",
+    "ThePath": "",
+    "Unzipper": "\"X:\\7-Zip\\7z.exe\" x -spe -o\"X:\\SDK\\platform-tools\" [zipFile]",
+    "Updates": ""
 }

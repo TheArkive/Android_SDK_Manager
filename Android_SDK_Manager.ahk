@@ -1,7 +1,15 @@
 ; AHK v2
+; Unzipper CLI Example:   "D:\7-Zip\7z.exe" x -spe -o"D:\SDK\platform-tools" [zipFile]
+;   The above command will use 7z.exe to unzip the downloaded file to "D:\SDK\platform-tools".
+;   To get the most out of this script, you need to specify the location of your 7z.exe and the
+;   location of your Android SDK folder.
+;
+; Source for downloading older versions of platform-tools:
+;   Link: https://stackoverflow.com/questions/53453640/is-there-a-way-to-install-an-older-version-of-android-platform-tools
 
 #INCLUDE lib\TheArkive_CliSAK.ahk
 #INCLUDE lib\_JXON.ahk
+#INCLUDE lib\_GuiCtlExt.ahk
 
 #NoTrayIcon
 
@@ -19,9 +27,16 @@ Settings["listing"] := false
 Settings["all"] := []
 Settings["installed"] := []
 
-(!Settings.Has("RootFolder")) ? Settings["RootFolder"] := "" : ""
-(!Settings.Has("ThePath"))    ? Settings["ThePath"]    := "" : ""
-(!Settings.Has("Link"))       ? Settings["Link"]       := "https://developer.android.com/studio#command-tools" : ""
+(!Settings.Has("RootFolder"))    ? Settings["RootFolder"]    := "" : ""
+(!Settings.Has("ThePath"))       ? Settings["ThePath"]       := "" : ""
+(!Settings.Has("Link"))          ? Settings["Link"]          := "https://developer.android.com/studio#command-tools" : ""
+(!Settings.Has("PlatOld"))       ? Settings["PlatOld"]       := [] : ""
+(!Settings.Has("PlatOldRecent")) ? Settings["PlatOldRecent"] := "" : ""
+(!Settings.Has("Unzipper"))      ? Settings["Unzipper"]      := "" : ""
+(!Settings.Has("Updates"))       ? Settings["Updates"]       := "" : ""
+
+If !FileExist(A_ScriptDir "\files") ; create dir for downloads
+    DirCreate "files"
 
 make_gui()
 
@@ -65,9 +80,11 @@ make_gui() {
     g.Add("Edit", "vRootFolder x+5 yp-3 w400", Settings["RootFolder"])
     g.Add("Button", "vRootBrowse x+0 hp" ,"...").OnEvent("Click", gui_events)
     g.Add("Button", "vOpen x+0 hp","Open").OnEvent("click",gui_events)
-    g.Add("Button", "vUpdate x+20 yp hp","Update Packages").OnEvent("click",gui_events)
+    g.Add("Button", "vUpdate x+10 yp hp","Update Packages").OnEvent("click",gui_events)
     
-    g.Add("Button", "vPathInst x+20 yp hp","Set User %PATH%").OnEvent("click",gui_events)
+    g.Add("Button", "vPathInst x+10 yp hp","Set User %PATH%").OnEvent("click",gui_events)
+    g.Add("Button", "vShowUpdates x+10 yp hp","Show Updates").OnEvent("click",gui_events)
+    g.Add("Button", "vScriptDir x+10 yp hp","Script Dir").OnEvent("click",gui_events)
     
     ctl := g.Add("Edit", "vLink1 xm y+10 w400 Center",Settings["Link"])
     ctl.SetFont("s8")
@@ -85,22 +102,45 @@ make_gui() {
     ctl.ModifyCol(3, 200)
     ctl.ModifyCol(4, 200)
     
-    g.Add("Text","x" x " y+10","Filter:")
+    g.Add("Text","xm y+10","Older platform-tools:")
+    PlatOld := g.Add("ComboBox","vPlatOld x+0 yp-3 w100 Sort")
+    PlatOld.OnEvent("change",gui_events)
+    
+    g.Add("Button","vDownload x+20","Download").OnEvent("click",gui_events)
+    g.Add("Button","vInstall x+0","Install").OnEvent("click",gui_events)
+    g.Add("Button","vDelete x+0","Delete").OnEvent("click",gui_events)
+    g.Add("Button","vUnzipper x+0","Set Unzipper CLI").OnEvent("click",gui_events)
+    g.Add("Button","vRevs x+0","Revisions").OnEvent("click",gui_events)
+    
+    g.Add("Text","x" x " yp","Filter:")
     g.Add("Edit", "vFilterAll x+0 yp-3 w200").OnEvent("change",gui_events)
     g.Add("Button","vFilterAllClear x+0 w30 hp","X").OnEvent("Click",gui_events)
     
     ctl := g.Add("ListView", "xm vAllList h400 w1050", ["Description", "Version", "Path"])
-    ctl.OnEvent("DoubleClick",gui_events)
+    ctl.OnEvent("DoubleClick", gui_events)
     ctl.ModifyCol(1, 500)
     ctl.ModifyCol(2, 100)
     ctl.ModifyCol(3, 400)
     
-    g.Add("StatusBar", "vStats")
+    UpdateFileList(g)
     
+    g.Add("StatusBar", "vStats")
     g.Show("")
     
     Settings["gui"] := g
     list_packages()
+}
+
+UpdateFileList(g) {
+    Global Settings
+    
+    PlatOld := g["PlatOld"]
+    PlatOld.Delete()
+    PlatOldArr := []
+    Loop Files A_ScriptDir "\files\platform-tools*.zip"
+        PlatOldArr.Push(RegExReplace(A_LoopFileName,"(platform\-tools_r|\-windows\.zip)"))
+    PlatOld.Add(PlatOldArr.Length?PlatOldArr:[""])
+    PlatOld.Text := Settings["PlatOldRecent"]
 }
 
 list_packages() {
@@ -108,6 +148,9 @@ list_packages() {
     
     sdkmgr := Settings["RootFolder"] "\cmdline-tools\latest\bin\sdkmanager.bat"
     Settings["output"] := ""
+    
+    Settings["gui"]["InstalledList"].Delete()
+    Settings["gui"]["AllList"].Delete()
     
     Settings["gui"]["Stats"].SetText("Please Wait...")
     c := cli(sdkmgr " --list", "ID:ListAll")
@@ -130,6 +173,10 @@ uninstall(pkg) {
     Settings["output"] := ""
     
     Settings["gui"]["Stats"].SetText("Please Wait...")
+    
+    If (pkg = "platform-tools")
+        RunWait("adb kill-server",,"hide")
+    
     c := cli(sdkmgr " --uninstall " pkg, "ID:Uninstall")
 }
 
@@ -144,6 +191,7 @@ update() {
 gui_events(ctl, info) {
     Global Settings
     g := Settings["gui"]
+    Static q := Chr(34)
     
     If (ctl.name = "RootBrowse") {
         If !(dir := FileSelect("D2", Settings["RootFolder"]))
@@ -203,7 +251,76 @@ gui_events(ctl, info) {
         Msgbox "Path values added."
     } Else If (ctl.name = "Link1") {
         Settings["Link"] := ctl.value
-    }
+    } Else If (ctl.name = "PlatOld") {
+        Settings["PlatOldRecent"] := ctl.Text
+    } Else if (ctl.name = "Unzipper") {
+        obj := InputBox("Enter cli command to unzip:","Unzip CLI",,Settings["Unzipper"])
+        If obj.value
+            Settings["Unzipper"] := obj.value
+    } Else if (ctl.name = "Download") {
+        If !(ver := ctl.gui["PlatOld"].Text) {
+            Msgbox "Select a version first."
+            return
+        }
+        
+        ctl.gui["Stats"].SetText("Downloading...")
+        dl_file := "https://dl.google.com/android/repository/platform-tools_r" ver "-windows.zip"
+        destFile := "platform-tools_r" ver "-windows.zip"
+        
+        If !FileExist(destFile)
+            Download(dl_file,A_ScriptDir "\files\" destFile)
+        Else {
+            Msgbox "File already exists:`r`n`r`n    " destFile
+            return
+        }
+        
+        ctl.gui["Stats"].SetText("")
+        test := FileRead("files\" destFile)
+        If InStr(test,"<!DOCTYPE html>") {
+            Msgbox "Download failed."
+            FileDelete "files\" destFile
+            return
+        } Else
+            Msgbox "Download successful."
+        
+        UpdateFileList(ctl.gui)
+    } Else If (ctl.name = "Install") {
+        If DirExist(Settings["RootFolder"] "\platform-tools") {
+            Msgbox "Uninstall current platform-tools first."
+            return
+        } Else If !(ver := ctl.gui["PlatOld"].Text) {
+            Msgbox "Select a version first."
+            return
+        }
+        
+        destFile := "files\platform-tools_r" ver "-windows.zip"
+        
+        ctl.gui["Stats"].SetText("Extracting...")
+        cmd := StrReplace(Settings["Unzipper"],"[zipFile]",destFile)
+        
+        RunWait(cmd,,"hide")
+        
+        ctl.gui["Stats"].SetText("")
+        list_packages()
+    } Else If (ctl.name = "Delete") {
+        If !(ver := ctl.gui["PlatOld"].Text) {
+            Msgbox "Select a version first."
+            return
+        }
+        
+        delFile := "files\platform-tools_r" ver "-windows.zip"
+        
+        If (MsgBox("Deleting file:`r`n`r`n" delFile "`r`n`r`nContinue?","DELETE FILE",4) = "No")
+            return
+        FileDelete delFile
+        MsgBox "File deleted."
+        UpdateFileList(ctl.gui)
+    } Else If (ctl.name = "ShowUpdates") {
+        upd_win()
+    } Else If (ctl.name = "Revs")
+        Run("https://developer.android.com/studio/releases/platform-tools#revisions")
+    Else if (ctl.name = "ScriptDir")
+        Run("explorer.exe " q A_ScriptDir q)
 }
 
 gui_close(_gui) {
@@ -299,11 +416,16 @@ proc_list(data) {
     
     s1 := InStr(data,"Installed Packages:")
     s2 := InStr(data,"Available Packages:")
+    s3 := InStr(data,"Available Updates:")
     
     Settings["all"] := []
     Settings["installed"] := []
     
-    all := SubStr(data,s2)
+    If (!s3)
+        all := SubStr(data,s2), updates := ""
+    Else
+        all := SubStr(data,s2,s3-s2-1)
+      , updates := SubStr(data,s3)
     installed := SubStr(data, s1, s2-s1)
     
     Loop Parse all, "`n", "`r"
@@ -325,6 +447,36 @@ proc_list(data) {
             Settings["installed"].Push([line[3], line[2], line[1], line[4]])
         }
     }
+    
+    If (updates)
+        upd_store(updates)
+}
+
+upd_store(txt,show:=false) {
+    list_upd := ""
+    Loop Parse txt, "`n", "`r"
+        If (A_Index >= 2 && A_LoopField)
+            list_upd .= (list_upd?"`r`n":"") A_LoopField
+    
+    Settings["Updates"] := list_upd
+    
+    If show
+        upd_win()
+}
+
+upd_win() {
+    g := Gui("-DPIScale -MinimizeBox -MaximizeBox Owner" Settings["gui"].hwnd,"Available Updates")
+    g.OnEvent("close",upd_close)
+    g.OnEvent("escape",upd_close)
+    
+    upd := Settings["Updates"] ? Settings["Updates"] : "No Updates"
+    g.SetFont(,"Consolas")
+    g.Add("Text",,upd)
+    g.Show("w300")
+}
+
+upd_close(g) {
+    g.Destroy()
 }
 
 dbg(in_str) {
