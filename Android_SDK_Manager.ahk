@@ -72,7 +72,7 @@ make_gui() {
     Global Settings
     Static q := Chr(34)
     
-    g := Gui("-DPIScale","Android SDK Manager")
+    g := Gui("","Android SDK Manager")
     g.SetFont("s10","Consolas")
     g.OnEvent("Close",gui_close)
     
@@ -448,8 +448,7 @@ proc_list(data) {
         }
     }
     
-    If (updates)
-        upd_store(updates)
+    upd_store(updates)
 }
 
 upd_store(txt,show:=false) {
